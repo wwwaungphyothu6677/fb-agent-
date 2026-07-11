@@ -1,6 +1,6 @@
 const express = require('express');
 const axios = require('axios');
-const { GoogleGenAI } = require('@google/genai'); // Gemini SDK ကို ခေါ်ယူခြင်း
+const { GoogleGenAI } = require('@google/genai'); 
 require('dotenv').config();
 
 const app = express();
@@ -10,11 +10,17 @@ const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 
-// Gemini AI ကို စတင်သတ်မှတ်ခြင်း
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// API Key စစ်ဆေးခြင်း (မရှိရင် error မတက်အောင် ကြိုကာကွယ်ထားတာပါ)
+const apiKey = process.env.GEMINI_API_KEY;
+let ai;
+if (apiKey) {
+    ai = new GoogleGenAI({ apiKey: apiKey });
+} else {
+    console.error("WARNING: GEMINI_API_KEY is not defined in Environment Variables!");
+}
 
 app.get('/', (req, res) => {
-    res.send('Facebook Gemini AI Agent is running...');
+    res.send('Facebook Gemini AI Agent is running perfectly...');
 });
 
 // Facebook Webhook Verification
@@ -33,12 +39,15 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// Facebook က စာဝင်လာရင် ဖတ်ပြီး Gemini နဲ့ ပြန်ဖြေမယ့်နေရာ
+// Facebook Webhook Listener
 app.post('/webhook', async (req, res) => {
     const body = req.body;
 
     if (body.object === 'page') {
-        body.entry.forEach(async (entry) => {
+        // map/for loops ထဲမှာ async/await သုံးရင် ကွဲလွဲတတ်လို့ ရိုးရိုး for loop သုံးပါမယ်
+        for (const entry of body.entry) {
+            if (!entry.messaging) continue;
+            
             const webhook_event = entry.messaging[0];
             const sender_psid = webhook_event.sender.id;
 
@@ -46,25 +55,28 @@ app.post('/webhook', async (req, res) => {
                 const userMessage = webhook_event.message.text;
                 console.log(`User Sent: ${userMessage}`);
 
+                if (!ai) {
+                    await sendFacebookMessage(sender_psid, "စနစ်ပြင်ဆင်မှု လိုအပ်နေပါသဖြင့် ခေတ္တစောင့်ဆိုင်းပေးပါ။");
+                    continue;
+                }
+
                 try {
-                    // Gemini API သို့ မေးခွန်းပို့ပြီး အဖြေတောင်းခြင်း (gemini-2.5-flash မော်ဒယ်ကို သုံးထားပါတယ်)
+                    // Gemini SDK ခေါ်ဆိုမှု
                     const response = await ai.models.generateContent({
                         model: 'gemini-2.5-flash',
                         contents: userMessage,
                     });
 
-                    const aiReply = response.text;
+                    const aiReply = response.text || "နားမလည်နိုင်ဖြစ်သွားလို့ ထပ်မံပြောကြားပေးပါ။";
                     console.log(`Gemini Reply: ${aiReply}`);
-
-                    // ရလာတဲ့ AI အဖြေကို Facebook Page ဆီ ပြန်ပို့ခြင်း
                     await sendFacebookMessage(sender_psid, aiReply);
 
                 } catch (aiError) {
-                    console.error('Gemini API Error:', aiError);
-                    await sendFacebookMessage(sender_psid, "စိတ်မရှိပါနဲ့၊ တစ်ခုခုလွဲချော်သွားလို့ နောက်မှ ထပ်မေးပေးပါခင်ဗျာ။");
+                    console.error('Gemini API Error Detail:', aiError.message);
+                    await sendFacebookMessage(sender_psid, "ခေတ္တအဆင်မပြေဖြစ်သွားလို့ ခဏနေမှ ထပ်စမ်းကြည့်ပေးပါ။");
                 }
             }
-        });
+        }
         res.status(200).send('EVENT_RECEIVED');
     } else {
         res.sendStatus(404);
@@ -81,10 +93,10 @@ async function sendFacebookMessage(sender_psid, text) {
 
     try {
         await axios.post(url, payload);
-        console.log('Message sent successfully');
+        console.log('Message sent successfully to:', sender_psid);
     } catch (error) {
         console.error('Error sending message:', error.response ? error.response.data : error.message);
     }
 }
 
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server is successfully running on port ${PORT}`));
