@@ -1,6 +1,6 @@
 const express = require('express');
 const axios = require('axios');
-const { GoogleGenAI } = require('@google/generative-ai'); // ပိုမိုတည်ငြိမ်သော SDK ဗားရှင်း
+const { GoogleGenerativeAI } = require('@google/generative-ai'); // ရေးထုံးမှန်ပြောင်းလဲခြင်း
 require('dotenv').config();
 
 const app = express();
@@ -14,7 +14,7 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const apiKey = process.env.GEMINI_API_KEY;
 let genAI;
 if (apiKey) {
-    genAI = new GoogleGenAI(apiKey);
+    genAI = new GoogleGenerativeAI(apiKey); // သန့်ရှင်းသော object တည်ဆောက်မှု
 } else {
     console.error("WARNING: GEMINI_API_KEY is missing!");
 }
@@ -60,7 +60,6 @@ app.post('/webhook', async (req, res) => {
                 }
 
                 try {
-                    // လူသုံးအများဆုံး gemini-1.5-flash ကို ပြောင်းသုံးထားပါတယ်
                     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                     const result = await model.generateContent(userMessage);
                     const response = await result.response;
