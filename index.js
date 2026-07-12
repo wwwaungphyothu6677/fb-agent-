@@ -82,7 +82,7 @@ app.post('/webhook', async (req, res) => {
 
 // Facebook Send Message Function
 async function sendFacebookMessage(sender_psid, text) {
-    const url = https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN};
+    const url = 'https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}';
     const payload = {
         recipient: { id: sender_psid },
         message: { text: text }
