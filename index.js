@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_secret_token";
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 
-// Telegram & Config
+// Telegram Configurations
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_FINANCE_CHAT_ID = process.env.TELEGRAM_FINANCE_CHAT_ID;
 const TELEGRAM_PACKING_CHAT_ID = process.env.TELEGRAM_PACKING_CHAT_ID;
@@ -39,13 +39,12 @@ function getValidChatSession(sender_psid, modelConfig) {
 // 📊 Google Sheet မှ မြို့နယ်နှင့် Deli ခ Live ဆွဲယူခြင်း
 async function getTownshipData() {
     const sheetId = process.env.GOOGLE_SHEET_ID;
-    if (!sheetId) return "ရန်ကုန်/မန္တလေး COD ရပြီး ကျန်မြို့များ ငွေကြိုလွှဲရပါမည်။";
+    if (!sheetId) return "ဒီမြို့‌ေလးက အိမ်‌ေရာက်‌ေငွ‌ေချ‌ေ‌ေလလးရပါတယ်ရှင့်";
     const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
     try {
         const response = await axios.get(url);
         const lines = response.data.split('\n');
-        let deliRules = "နောက်ဆက်တွဲ ပို့ဆောင်ရေးလမ်းညွှန်ချက်-\n";
-        
+        let deliRules = "လမ်းညွှန်ချက်-\n";
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
@@ -53,16 +52,38 @@ async function getTownshipData() {
             const town = cols[0] ? cols[0].replace(/"/g, '').trim() : '';
             const deli = cols[1] ? cols[1].replace(/"/g, '').trim() : '';
             const type = cols[2] ? cols[2].replace(/"/g, '').trim() : 'Prepaid';
-            
             if (town) {
-                deliRules += `- မြို့နယ်: ${town} ဖြစ်ပါက ပို့ဆောင်ခ ${deli} ကျပ် ဖြစ်ပြီး ${type === 'COD' ? 'အိမ်ရောက်ငွေချေ (COD)' : 'ငွေကြိုလွှဲ'} ရပါမည်။\n`;
+                deliRules += `- မြို့နယ်: ${town} ဖြစ်ပါက ပို့ဆောင်ခ ${deli} ကျပ် ဖြစ်ပြီး ${type === 'COD' ? 'အိမ်ရောက်ငွေချေ (COD) ရပါသည်' : 'ငွေကြိုလွှဲရပါမည်'}။\n`;
             }
         }
-        deliRules += "မှတ်ချက် - အထက်ပါစာရင်းထဲတွင် မပါသော မြို့နယ်အားလုံးသည် ပို့ဆောင်ခ ၄,၀၀၀ ကျပ် ဖြစ်ပြီး သေချာပေါက် 'ငွေကြိုလွှဲ' ရပါမည်။\n";
         return deliRules;
-    } catch (e) {
-        return "ရန်ကုန်/မန္တလေး COD ရပြီး ကျန်မြို့များ ငွေကြိုလွှဲရပါမည်။";
-    }
+    } catch (e) { return "ရန်ကုန်/မန္တလေး COD ရပြီး ကျန်မြို့များ ငွေကြိုလွှဲရပါမည်။"; }
+}
+
+// 📊 Google Sheet မှ ပစ္စည်းနှင့် ဈေးနှုန်းစာရင်း ဆွဲယူခြင်း
+async function getLiveShopInfo() {
+    const sheetId = process.env.GOOGLE_SHEET_ID;
+    if (!sheetId) return "ဒီပပစ္စည်း‌ေလးက မရနိုင်‌ေသသးပါဘူးရှင့်။";
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`; // Note: တကယ်လို့ တစ်ခုတည်းမှာတွဲထားရင် Tab ID ခွဲနိုင်ပါတယ်
+    try {
+        const response = await axios.get(url);
+        const lines = response.data.split('\n');
+        let itemsText = "";
+        let count = 1;
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            const columns = line.split(',');
+            const name = columns[0] ? columns[0].replace(/"/g, '') : '';
+            const price = columns[1] ? columns[1].replace(/"/g, '') : '';
+            const stock = columns[2] ? columns[2].replace(/"/g, '') : '';
+            if (name && !name.includes("Township")) { // Header တွေကို ဇကာတင်ခြင်း
+                itemsText += `${count}. ${name} - ${price} ကျပ် (${stock})\n`;
+                count++;
+            }
+        }
+        return itemsText;
+    } catch (e) { return "ပစ္စည်းများ ရောင်းချပေးနေပါသည်။"; }
 }
 
 // ✈️ Telegram Functions
@@ -71,22 +92,16 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null) {
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     const payload = { chat_id: chatId, text: text, parse_mode: 'Markdown' };
     if (replyMarkup) payload.reply_markup = replyMarkup;
-    try { await axios.post(url, payload); } catch (e) { console.error("TG send error:", e.message); }
+    try { await axios.post(url, payload); } catch (e) {}
 }
 
-async function sendTelegramPhoto(chatId, photoUrl, caption) {
+async function sendTelegramPhoto(chatId, photoUrl, caption, replyMarkup = null) {
     if (!TELEGRAM_BOT_TOKEN || !chatId) return;
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
-    try { await axios.post(url, { chat_id: chatId, photo: photoUrl, caption: caption }); } catch (e) {}
+    const payload = { chat_id: chatId, photo: photoUrl, caption: caption, parse_mode: 'Markdown' };
+    if (replyMarkup) payload.reply_markup = replyMarkup;
+    try { await axios.post(url, payload); } catch (e) {}
 }
-
-app.get('/', (req, res) => res.status(200).send('Advance AI Sales Workflow running...'));
-app.get('/webhook', (req, res) => {
-    if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === VERIFY_TOKEN) {
-        return res.status(200).send(req.query['hub.challenge']);
-    }
-    return res.sendStatus(403);
-});
 
 // 📥 Facebook Webhook Listener
 app.post('/webhook', async (req, res) => {
@@ -98,69 +113,52 @@ app.post('/webhook', async (req, res) => {
         const webhook_event = entry.messaging[0];
         const sender_psid = webhook_event.sender.id;
 
-        // 🔘 ကလစ်နှိပ်ချက် (Postback Buttons) များကို ကိုင်တွယ်ခြင်း
-        if (webhook_event.postback) {
-            const payload = webhook_event.postback.payload;
-            
-            if (payload.startsWith("CONFIRM_ORDER_")) {
-                const psid = payload.replace("CONFIRM_ORDER_", "");
-                
-                // AI Memory ထဲကနေ မှာယူတဲ့အချက်အလက်ကို Extraction လုပ်ပြီး သန့်စင်ရန် တောင်းခြင်း
-                let finalOrderText = "အချက်အလက် မပြည့်စုံပါ။";
-                if (chatSessions[psid]) {
-                    try {
-                        const history = await chatSessions[psid].session.getHistory();
-                        let conversation = "";
-                        history.forEach(t => conversation += `${t.role === 'user' ? 'Cust' : 'AI'}: ${t.parts[0].text}\n`);
-                        
-                        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-                        const extraction = await model.generateContent(
-                            `အောက်ပါ စကားပြောဆိုမှုထဲမှ Customer ၏ (၁) အမည်၊ (၂) ဖုန်းနံပါတ်၊ (၃) လိပ်စာ၊ (၄) မှာယူသည့်ပစ္စည်းနှင့် အရေအတွက် တို့ကိုသာ သန့်စင်စွာ ထုတ်ပေးပါ။ Chat list ကြီး မလိုချင်ပါ။\n\n${conversation}`
-                        );
-                        finalOrderText = extraction.response.text();
-                    } catch (e) { finalOrderText = "အော်ဒါ အတည်ပြုပြီးပါပြီ။"; }
-                }
-
-                // Inline Confirm Button ပါဝင်သော Telegram Packing Group သို့ ပို့ခြင်း
-                const inlineKeyboard = {
-                    inline_keyboard: [[{ text: "📦 ပါဆယ်ထုတ်ပြီးပြီ", callback_data: `PACKED_${psid}` }]]
-                };
-                
-                await sendTelegramMessage(
-                    TELEGRAM_PACKING_CHAT_ID, 
-                    `📦 *ပါဆယ်ထုတ်ရန် အော်ဒါအသစ်*\n\n${finalOrderText}`, 
-                    inlineKeyboard
-                );
-
-                await sendFacebookMessage(psid, "ကျေးဇူးတင်ပါတယ်ရှင့်။ လူကြီးမင်း၏ အော်ဒါကို အတည်ပြုပြီး Packing ဌာနသို့ လွှဲပြောင်းပေးလိုက်ပါပြီ။ ပစ္စည်းထုတ်ပြီးပါက ထပ်မံအကြောင်းကြားပေးပါမည်။");
-            }
-            continue;
-        }
-
-        // ၁။ Screenshot ပို့လာလျှင် -> Finance Group
+        // ၁။ Customer က Screenshot (ငွေလွှဲ) ပို့လာလျှင် -> Finance Group သို့ သွားမည်
         if (webhook_event.message && webhook_event.message.attachments) {
             const attachment = webhook_event.message.attachments[0];
             if (attachment.type === 'image') {
-                await sendTelegramPhoto(TELEGRAM_FINANCE_CHAT_ID, attachment.payload.url, `💰 *ငွေလွှဲပြေစာ*\nCustomer PSID: \`${sender_psid}\``);
-                await sendFacebookMessage(sender_psid, "ငွေလွှဲပြေစာ လက်ခံရရှိပါပြီ။ တာဝန်ရှိသူ စစ်ဆေးပေးပါမည်။");
+                let orderItems = "ပစ္စည်းအချက်အလက် စစ်ဆေးဆဲ";
+                if (chatSessions[sender_psid]) {
+                    try {
+                        const history = await chatSessions[sender_psid].session.getHistory();
+                        let conversation = "";
+                        history.forEach(t => conversation += `${t.parts[0].text}\n`);
+                        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+                        const ext = await model.generateContent(`အောက်ပါစာသားထဲမှ Customer မှာယူထားသော ပစ္စည်းအမည်နှင့် အရေအတွက်ကိုသာ တိုတိုတုတ်တုတ် ထုတ်ပေးပါ-\n\n${conversation}`);
+                        orderItems = ext.response.text().trim();
+                    } catch (e) {}
+                }
+
+                const inlineKeyboard = { inline_keyboard: [[{ text: "💰 ငွေလွှဲမှန်ကန်ကြောင်း အတည်ပြုမည်", callback_data: `FINANCE_CONFIRM_${sender_psid}` }]] };
+                await sendTelegramPhoto(
+                    TELEGRAM_FINANCE_CHAT_ID, 
+                    attachment.payload.url, 
+                    `💰 *ငွေလွှဲပြေစာအသစ် ရောက်ရှိလာပါသည်*\n\n• *Customer ID:* \`${sender_psid}\`\n• *မှာယူထားသည့် ပစ္စည်း:* ${orderItems}\n\nလူသား Admin များ စစ်ဆေးပြီး ခလုတ်နှိပ်ပေးပါရန်။`,
+                    inlineKeyboard
+                );
+                await sendFacebookMessage(sender_psid, "ငွေလွှဲပြေစာ ပေးပို့မှုအတွက် ကျေးဇူးတင်ပါတယ်ရှင်။ တာဝန်ရှိသူက စစ်ဆေးပြီးတာနဲ့ ချက်ချင်း အကြောင်းကြားပေးပါမည်။");
                 continue;
             }
         }
 
-        // ၂။ စာပို့လာလျှင်
+        // ၂။ စာပို့လာလျှင် (လူတစ်ယောက်လို ဖြေဆိုမည့်စနစ်)
         if (webhook_event.message && webhook_event.message.text) {
             const userMessage = webhook_event.message.text;
 
             try {
+                const itemsList = await getLiveShopInfo();
                 const deliRules = await getTownshipData();
+
                 const modelConfig = { 
                     model: "gemini-2.5-flash",
                     systemInstruction: `
-သင်သည် ဆိုင်၏ AI အရောင်းဝန်ထမ်း ဖြစ်သည်။ မြန်မာဘာသာဖြင့် ဖြေပါ။
-${deliRules}
-[စည်းကမ်းချက်] 
-- Customer က ဝယ်ယူရန် အမည်၊ ဖုန်း၊ လိပ်စာ၊ ပစ္စည်းစာရင်း ပေးပြီးပါက အော်ဒါအနှစ်ချုပ်ကို ပြပြီး "အောက်ပါ ခလုတ်ကို နှိပ်၍ အော်ဒါ အတည်ပြုပေးပါ" ဟု ပြောပါ။ 
-- Customer က အတည်မပြုမချင်း Packing ဌာနသို့ မပို့နိုင်ကြောင်း သတိပေးပါ။
+သင်သည် ဆိုင်၏ အလွန်ယဉ်ကျေးသော လူသားအရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။ စက်ရုပ်လို လုံးဝမဖြေပါနှင့်။
+[စည်းကမ်းချက်နှင့် လုပ်ငန်းစဉ်အဆင့်ဆင့်]
+၁။ Customer က ပစ္စည်းအကြောင်း၊ ဈေးနှုန်းမေးမြန်းပါက ဤစာရင်းအတိုင်း ညင်သာစွာ ဖြေပေးပါ-\n${itemsList}
+၂။ Customer က ပစ္စည်းတစ်ခုခုကို ဝယ်ယူမည်/မှာယူမည်ဟု ပြောလာပါက သေချာပေါက် "ပို့ဆောင်ပေးရမည့် မြို့နယ်" ကို အရင်မေးမြန်းပါ။
+၃။ Customer ပေးသော မြို့နယ်ကို ဤစည်းကမ်းချက်အတိုင်း တိုက်စစ်ပါ-\n${deliRules}
+   - မြို့နယ်သည် COD ရသော စာရင်းထဲတွင် ပါဝင်ပါက: COD ရရှိကြောင်း ပြောပြပြီး (အမည်၊ ဖုန်း၊ လိပ်စာ) တောင်းခံပါ။
+   - မြို့နယ်သည် COD မရပါက (သို့မဟုတ်) စာရင်းထဲမရှိပါက: ၎င်းမြို့နယ်သည် ငွေကြိုလွှဲရမည့် မြို့နယ်ဖြစ်ကြောင်း ကောင်းမွန်စွာ ရှင်းပြပြီး ငွေလွှဲရန် အကောင့်နံပါတ်ပေးကာ ငွေလွှဲပြေစာ Screenshot ပို့ခိုင်းပါ။
 `
                 };
 
@@ -168,13 +166,21 @@ ${deliRules}
                 const result = await chat.sendMessage(userMessage);
                 const aiReply = result.response.text();
 
-                // အကယ်၍ AI က အော်ဒါအနှစ်ချုပ်ပြီး အတည်ပြုခိုင်းနေပြီဆိုလျှင် Facebook Button ပြပေးမည်
-                const isReadyToConfirm = /(အတည်ပြု|ခလုတ်)/i.test(aiReply);
-                
-                if (isReadyToConfirm) {
-                    await sendFacebookButtonMessage(sender_psid, aiReply, sender_psid);
-                } else {
-                    await sendFacebookMessage(sender_psid, aiReply);
+                await sendFacebookMessage(sender_psid, aiReply);
+
+                // Customer က အချက်အလက်တွေပေးပြီး COD မြို့နယ်ဖြစ်နေရင် Packing Group သို့ တန်းပို့မည့် ကဏ္ဍ
+                const hasDetails = /(လိပ်စာ|အိမ်အမှတ်|လမ်း|မြို့)/i.test(userMessage) && /(09\d{7,9})/i.test(userMessage);
+                const isCOD = /COD|အိမ်ရောက်ငွေချေ/i.test(aiReply); 
+
+                if (hasDetails && isCOD) {
+                    const history = await chat.getHistory();
+                    let conversation = "";
+                    history.forEach(t => conversation += `${t.parts[0].text}\n`);
+                    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+                    const ext = await model.generateContent(`အောက်ပါစာသားထဲမှ Customer ၏ (၁) အမည်၊ (၂) ဖုန်းနံပါတ်၊ (၃) လိပ်စာ၊ (၄) မှာယူသည့်ပစ္စည်း တို့ကိုသာ သန့်စင်စွာ ထုတ်ပေးပါ။\n\n${conversation}`);
+                    
+                    const inlineKeyboard = { inline_keyboard: [[{ text: "📦 ပါဆယ်ထုတ်ပြီးပြီ", callback_data: `PACKING_DONE_${sender_psid}` }]] };
+                    await sendTelegramMessage(TELEGRAM_PACKING_CHAT_ID, `📦 *ပါဆယ်ထုတ်ရန် (COD အော်ဒါ)*\n\n${ext.response.text()}`, inlineKeyboard);
                 }
 
             } catch (aiError) {
@@ -185,53 +191,72 @@ ${deliRules}
     return res.status(200).send('EVENT_RECEIVED');
 });
 
-// 📥 Telegram Webhook (Bot Callback Buttons ဖတ်ရန်)
+// 📥 Telegram Webhook Listener (Finance / Packing Button Callback)
 app.post('/tg-webhook', async (req, res) => {
     const { callback_query } = req.body;
-    if (callback_query && callback_query.data.startsWith("PACKED_")) {
-        const psid = callback_query.data.replace("PACKED_", "");
-        
-        // Facebook Customer ဆီ စာလှမ်းပို့ခြင်း
-        await sendFacebookMessage(psid, "လူကြီးမင်းမှာယူထားသော ပါဆယ်ကို ထုပ်ပိုးပြီးစီး၍ ဂိတ်/Deli သို့ အပ်နှံလိုက်ပြီ ဖြစ်ပါကြောင်း ဝမ်းမြောက်စွာ အကြောင်းကြားအပ်ပါတယ်ရှင်။ 📦✨");
-        
-        // Telegram Group ထဲက စာကို Update လုပ်ပြီး ခလုတ်ဖြုတ်ခြင်း
-        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`;
+    if (!callback_query) return res.sendStatus(200);
+
+    const data = callback_query.data;
+    const tgUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`;
+
+    // 💰 Finance Admin က Confirm နှိပ်လိုက်လျှင်
+    if (data.startsWith("FINANCE_CONFIRM_")) {
+        const psid = data.replace("FINANCE_CONFIRM_", "");
+
+        // ၁။ Customer ဆီ စာပို့
+        await sendFacebookMessage(psid, "လူကြီးမင်း ပို့ဆောင်ပေးသော ငွေလွှဲပြေစာကို စစ်ဆေးပြီးပါပြီရှင်။ ငွေလွှဲလက်ခံရရှိပါပြီ။ ပစ္စည်းများကို Packing ဌာနသို့ လွှဲပြောင်းပေးပို့လိုက်ပါပြီရှင်။ ဆိုင်ကို အားပေးမှုအတွက် ကျေးဇူးတင်ပါတယ်ရှင့်။");
+
+        // ၂။ Chat History ထဲကနေ လိပ်စာ၊ ဖုန်း၊ ပစ္စည်း အနှစ်ချုပ်ဆွဲထုတ်ပြီး Packing Group သို့ လှမ်းပို့ခြင်း
+        let cleanSpecs = "အချက်အလက်များကို ဆွဲယူ၍မရပါ။";
+        if (chatSessions[psid]) {
+            try {
+                const history = await chatSessions[psid].session.getHistory();
+                let conversation = "";
+                history.forEach(t => conversation += `${t.parts[0].text}\n`);
+                const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+                const ext = await model.generateContent(`အောက်ပါစာသားထဲမှ Customer ၏ (၁) အမည်၊ (၂) ဖုန်းနံပါတ်၊ (၃) လိပ်စာ၊ (၄) မှာယူသည့်ပစ္စည်း တို့ကိုသာ သန့်စင်စွာ ထုတ်ပေးပါ။ Chat list ကြီး မပါရပါ။\n\n${conversation}`);
+                cleanSpecs = ext.response.text();
+            } catch (e) {}
+        }
+
+        const inlineKeyboard = { inline_keyboard: [[{ text: "📦 ပါဆယ်ထုတ်ပြီးပြီ", callback_data: `PACKING_DONE_${psid}` }]] };
+        await sendTelegramMessage(TELEGRAM_PACKING_CHAT_ID, `📦 *ပါဆယ်ထုတ်ရန် (ငွေကြိုလွှဲအော်ဒါ)*\n\n${cleanSpecs}`, inlineKeyboard);
+
+        // ၃။ Finance Message ကို Status ပြောင်းခြင်း
         try {
-            await axios.post(url, {
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageCaption`, {
                 chat_id: callback_query.message.chat.id,
                 message_id: callback_query.message.message_id,
-                text: callback_query.message.text + "\n\n✅ *[ပါဆယ်ထုတ်ပြီးကြောင်း Customer ထံ အကြောင်းကြားပြီးပါပြီ]*"
+                caption: callback_query.message.caption + "\n\n✅ *[ငွေလွှဲစစ်ဆေးပြီး - Packing သို့ ပို့ဆောင်ပြီးပါပြီ]*",
+                parse_mode: 'Markdown'
             });
         } catch (e) {}
     }
+
+    // 📦 Packing Admin က Confirm နှိပ်လိုက်လျှင်
+    if (data.startsWith("PACKING_DONE_")) {
+        const psid = data.replace("PACKING_DONE_", "");
+        
+        // Customer ဆီ စာပို့
+        await sendFacebookMessage(psid, "လူကြီးမင်းမှာယူထားသော ပါဆယ်ကို ထုပ်ပိုးပြင်ဆင်ပြီးစီးသွားပြီ ဖြစ်ပါသဖြင့် ဂိတ်/Deli သို့ လွှဲပြောင်းအပ်နှံပေးလိုက်ပြီ ဖြစ်ကြောင်း သတင်းကောင်းပါးအပ်ပါတယ်ရှင်။ 📦✨");
+
+        // Packing Message ကို Status ပြောင်းခြင်း
+        try {
+            await axios.post(tgUrl, {
+                chat_id: callback_query.message.chat.id,
+                message_id: callback_query.message.message_id,
+                text: callback_query.message.text + "\n\n✅ *[ပါဆယ်ထုတ်ပိုးပြီးကြောင်း Customer ထံ စာပို့ပြီးပါပြီ]*"
+            });
+        } catch (e) {}
+    }
+
     return res.sendStatus(200);
 });
 
-// Facebook Standard Messages
 async function sendFacebookMessage(sender_psid, text) {
     if (!PAGE_ACCESS_TOKEN) return;
     const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
     try { await axios.post(url, { recipient: { id: sender_psid }, message: { text: text } }); } catch (e) {}
 }
 
-// Facebook Button Messages
-async function sendFacebookButtonMessage(sender_psid, text, payloadId) {
-    if (!PAGE_ACCESS_TOKEN) return;
-    const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
-    const payload = {
-        recipient: { id: sender_psid },
-        message: {
-            attachment: {
-                type: "template",
-                payload: {
-                    template_type: "button",
-                    text: text,
-                    buttons: [{ type: "postback", title: "🛒 ဝယ်ယူမည် (Confirm)", payload: `CONFIRM_ORDER_${payloadId}` }]
-                }
-            }
-        }
-    };
-    try { await axios.post(url, payload); } catch (e) {}
-}
-
-app.listen(PORT, '0.0.0.0', () => console.log(`Advance Systems running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Live Automated Shop running on port ${PORT}`));
