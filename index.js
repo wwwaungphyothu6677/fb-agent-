@@ -17,12 +17,10 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // 🧠 Customer တစ်ယောက်ချင်းစီရဲ့ စကားပြောမှတ်ဉာဏ် (Chat History)
 const chatHistories = {};
 
-// 🛠️ Google Stable v1 API သို့ တိုက်ရိုက် Axios ဖြင့် ခေါ်ယူသည့် Function
+// 🛠️ Google Stable v1 API သို့ တိုက်ရိုက် Axios ဖြင့် ခေါ်ယူသည့် Function (Payload Schema Fixed)
 async function callGeminiAPI(systemInstruction, userMessage, history = []) {
-    // stable v1 endpoint ကို တိုက်ရိုက် အသေခေါ်ယူခြင်း
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
     
-    // History contents များအား API Format အတိုင်း ပြင်ဆင်ခြင်း
     const contents = [];
     history.forEach(turn => {
         contents.push({
@@ -31,16 +29,15 @@ async function callGeminiAPI(systemInstruction, userMessage, history = []) {
         });
     });
     
-    // လက်ရှိ User ရိုက်လိုက်သည့်စာကိုပါ ထည့်သွင်းခြင်း
     contents.push({
         role: 'user',
         parts: [{ text: userMessage }]
     });
 
+    // 🛠️ Status 400 ကို ကျော်လွှားရန် Official ရေးထုံးအမှန်
     const payload = {
         contents: contents,
         systemInstruction: {
-            role: 'system',
             parts: [{ text: systemInstruction }]
         },
         generationConfig: {
@@ -52,7 +49,7 @@ async function callGeminiAPI(systemInstruction, userMessage, history = []) {
     return response.data.candidates[0].content.parts[0].text;
 }
 
-// 🛠️ Chat History ထဲကနေ မှာယူတဲ့ Specs တွေကို သန့်စင်ထုတ်ယူပေးမည့် Function
+// 🛠️ Chat History ထဲကနေ မှာယူတဲ့ Specs တွေကို သန့်စင်ထုတ်ယူပေးမည့် Function (Payload Schema Fixed)
 async function extractOrderSpecs(conversationText) {
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
     const payload = {
@@ -73,7 +70,7 @@ async function extractOrderSpecs(conversationText) {
 async function getSheetData() {
     const sheetId = process.env.GOOGLE_SHEET_ID;
     let itemsText = "1. Power Bank - 35,000 ကျပ်\n2. Earbuds - 28,000 ကျပ်\n";
-    let deliRules = "- ရန်ကုန်/မန္တလေး: ပို့ဆောင်ခ ၃,००၀ ကျပ် (အိမ်ရောက်ငွေချေ COD ရသည်)\n- ကျန်မြို့များ: ပို့ဆောင်ခ ၄,၀၀၀ ကျပ် (ငွေကြိုလွှဲရမည်)\n";
+    let deliRules = "- ရန်ကုန်/မန္တလေး: ပို့ဆောင်ခ ၃,၀၀၀ ကျပ် (အိမ်ရောက်ငွေချေ COD ရသည်)\n- ကျန်မြို့များ: ပို့ဆောင်ခ ၄,၀၀၀ ကျပ် (ငွေကြိုလွှဲရမည်)\n";
 
     if (!sheetId) return { itemsText, deliRules };
 
@@ -192,24 +189,20 @@ app.post('/webhook', async (req, res) => {
 ၂။ မှာယူမည်ဟု ပြောလာပါက "ပို့ဆောင်ပေးရမည့် မြို့နယ်" ကို အရင်မေးပါ။
 ၃။ မြို့နယ်အလိုက် ဤစည်းကမ်းချက်အတိုင်း တွက်ချက်ပါ-\n${deliRules}
    - COD ရသော မြို့နယ်ဖြစ်ပါက: COD ရကြောင်းပြောပြီး အမည်၊ ဖုန်း၊ လိပ်စာ တောင်းပါ။
-   - COD မရပါက: ငွေကြိုလွှဲရမည်ဖြစ်ကြောင်း ရှင်းပြပြီး ငွေလွှဲပြေစာ တောင်းပါ။
+   - COD မရပါက: Ngwe kyo lwal ya myi hpyitကြောင်း ရှင်းပြပြီး ငွေလွှဲပြေစာ တောင်းပါ။
 ၄။ Customer က အချက်အလက်အစုံပေးပြီးပါက အော်ဒါအနှစ်ချုပ်ပြပြီး ခလုတ်နှိပ်၍ အတည်ပြုခိုင်းပါ။
 `;
 
-                // 🧠 ၂၄ နာရီ TTL Chat History စီမံခန့်ခွဲခြင်း
                 const now = Date.now();
                 if (!chatHistories[sender_psid] || (now - chatHistories[sender_psid].createdAt > 24 * 60 * 60 * 1000)) {
                     chatHistories[sender_psid] = { history: [], createdAt: now };
                 }
 
-                // API သို့ တိုက်ရိုက်လှမ်းခေါ်ခြင်း
                 const aiReply = await callGeminiAPI(systemInstruction, userMessage, chatHistories[sender_psid].history);
 
-                // History ထဲသို့ အပြန်အလှန် သိမ်းဆည်းခြင်း
                 chatHistories[sender_psid].history.push({ role: 'user', text: userMessage });
                 chatHistories[sender_psid].history.push({ role: 'model', text: aiReply });
 
-                // Interactive Button ပြသရန် လိုမလို စစ်ဆေးခြင်း
                 const isReadyToConfirm = /(အတည်ပြု|ခလုတ်)/i.test(aiReply);
                 if (isReadyToConfirm) {
                     await sendFacebookButtonMessage(sender_psid, aiReply, sender_psid);
@@ -217,7 +210,6 @@ app.post('/webhook', async (req, res) => {
                     await sendFacebookMessage(sender_psid, aiReply);
                 }
 
-                // COD ဖြစ်ပြီး အချက်အလက်ပါလာပါက Packing သို့ တန်းပို့ခြင်း
                 const hasDetails = /(လိပ်စာ|အိမ်အမှတ်|လမ်း|မြို့)/i.test(userMessage) && /(09\d{7,9})/.test(userMessage);
                 if (hasDetails && /COD|အိမ်ရောက်ငွေချေ/i.test(aiReply)) {
                     let conversation = "";
@@ -245,7 +237,7 @@ app.post('/tg-webhook', async (req, res) => {
 
     if (data.startsWith("FINANCE_CONFIRM_")) {
         const psid = data.replace("FINANCE_CONFIRM_", "");
-        await sendFacebookMessage(psid, "ငွေလွှဲပြေစာကို စစ်ဆေးပြီးပါပြီရှင်။ ငွေလွှဲလက်ခံရရှိပါပြီ။ ပစ္စည်းများကို Packing ဌာနသို့ လွှဲပြောင်းပေးလိုက်ပါပြီ။");
+        await sendFacebookMessage(psid, "ငွေလွှဲပြေစာကို စစ်ဆေးပြီးပါပြီရှင်။ Ngwe lwalလက်ခံရရှိပါပြီ။ ပစ္စည်းများကို Packing ဌာနသို့ လွှဲပြောင်းပေးလိုက်ပါပြီ။");
 
         let cleanSpecs = "အချက်အလက် စစ်ဆေးဆဲ...";
         if (chatHistories[psid]) {
