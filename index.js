@@ -40,6 +40,7 @@ async function callGeminiAPI(systemInstruction, userMessage, history = []) {
     const payload = {
         contents: contents,
         systemInstruction: {
+            role: 'system',
             parts: [{ text: systemInstruction }]
         },
         generationConfig: {
