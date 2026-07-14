@@ -17,7 +17,10 @@ const TELEGRAM_PACKING_CHAT_ID = process.env.TELEGRAM_PACKING_CHAT_ID;
 const apiKey = process.env.GEMINI_API_KEY;
 let genAI = null;
 if (apiKey) {
-    try { genAI = new GoogleGenerativeAI(apiKey); } catch(e) { console.error(e); }
+    try { 
+        // 🛠️ v1beta Error ကို ကျော်လွှားရန် stable v1 endpoint သို့ ပြောင်းလဲသတ်မှတ်ခြင်း
+        genAI = new GoogleGenerativeAI(apiKey, { apiVersion: 'v1' }); 
+    } catch(e) { console.error(e); }
 }
 
 const chatSessions = {};
@@ -36,10 +39,10 @@ function getValidChatSession(sender_psid, modelConfig) {
     return null;
 }
 
-// 📊 Google Sheet Data Parser (Error-Proof Version)
+// 📊 Google Sheet Data Parser
 async function getSheetData() {
     const sheetId = process.env.GOOGLE_SHEET_ID;
-    let itemsText = "1. Power Bank - 35,000 ကျပ်\n2. Earbuds - 28,000 ကျပ်\n"; // Fallback fallback data
+    let itemsText = "1. Power Bank - 35,000 ကျပ်\n2. Earbuds - 28,000 ကျပ်\n";
     let deliRules = "- ရန်ကုန်/မန္တလေး: ပို့ဆောင်ခ ၃,၀၀၀ ကျပ် (အိမ်ရောက်ငွေချေ COD ရသည်)\n- ကျန်မြို့များ: ပို့ဆောင်ခ ၄,၀၀၀ ကျပ် (ငွေကြိုလွှဲရမည်)\n";
 
     if (!sheetId) return { itemsText, deliRules };
@@ -48,7 +51,6 @@ async function getSheetData() {
     try {
         const response = await axios.get(url, { timeout: 5000 });
         const lines = response.data.split('\n');
-        
         let tempItems = "";
         let tempDeli = "";
         let itemCount = 1;
@@ -58,18 +60,14 @@ async function getSheetData() {
             if (!line) continue;
             const cols = line.split(',');
 
-            // ကော်မာ ခွဲထုတ်ရာတွင် အမှားမပါစေရန် စစ်ဆေးခြင်း
             const colA = cols[0] ? cols[0].replace(/"/g, '').trim() : '';
             const colB = cols[1] ? cols[1].replace(/"/g, '').trim() : '';
             const colC = cols[2] ? cols[2].replace(/"/g, '').trim() : '';
 
-            // ၁။ ပစ္စည်းစာရင်း ဖြစ်ခဲ့လျှင် (ဈေးနှုန်းက ကိန်းဂဏန်းဖြစ်ပြီး မြို့နယ်မဟုတ်လျှင်)
             if (colA && colB && !isNaN(colB.replace(/ကျပ်|,/g, '')) && !colA.toLowerCase().includes("township")) {
                 tempItems += `${itemCount}. ${colA} - ${colB} ကျပ် (${colC})\n`;
                 itemCount++;
-            } 
-            // ၂။ မြို့နယ်နှင့် Deli စည်းကမ်း ဖြစ်ခဲ့လျှင်
-            else if (colA && colB && (colC.toLowerCase() === 'cod' || colC.toLowerCase() === 'prepaid')) {
+            } else if (colA && colB && (colC.toLowerCase() === 'cod' || colC.toLowerCase() === 'prepaid')) {
                 tempDeli += `- မြို့နယ်: ${colA} ဖြစ်ပါက ပို့ဆောင်ခ ${colB} ကျပ် ဖြစ်ပြီး ${colC.toLowerCase() === 'cod' ? 'အိမ်ရောက်ငွေချေ (COD) ရပါသည်' : 'ငွေကြိုလွှဲရပါမည်'}။\n`;
             }
         }
@@ -77,13 +75,11 @@ async function getSheetData() {
         if (tempItems) itemsText = tempItems;
         if (tempDeli) deliRules = tempDeli;
 
-    } catch (e) {
-        console.error("Sheet read error, using fallback rules:", e.message);
-    }
+    } catch (e) { console.error("Sheet error:", e.message); }
     return { itemsText, deliRules };
 }
 
-// Telegram
+// Telegram Functions
 async function sendTelegramMessage(chatId, text, replyMarkup = null) {
     if (!TELEGRAM_BOT_TOKEN || !chatId) return;
     try { await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, { chat_id: chatId, text: text, parse_mode: 'Markdown', reply_markup: replyMarkup }); } catch (e) {}
@@ -122,7 +118,7 @@ app.post('/webhook', async (req, res) => {
                         const history = await chatSessions[psid].session.getHistory();
                         let conversation = "";
                         history.forEach(t => conversation += `${t.parts[0].text}\n`);
-                        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+                        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
                         const ext = await model.generateContent(`အောက်ပါစာသားထဲမှ Customer ၏ အမည်၊ ဖုန်းနံပါတ်၊ လိပ်စာနှင့် မှာယူသည့်ပစ္စည်း တို့ကိုသာ စာရင်းလုပ်ပေးပါ။\n\n${conversation}`);
                         finalOrderText = ext.response.text();
                     } catch (e) {}
@@ -151,7 +147,7 @@ app.post('/webhook', async (req, res) => {
                     } catch (e) {}
                 }
 
-                const inlineKeyboard = { inline_keyboard: [[{ text: "💰 ငွေလွှဲမှန်ကန်ကြောင်း အတည်ပြုမည်", callback_data: `FINANCE_CONFIRM_${sender_psid}` }]] };
+                const inlineKeyboard = { inline_keyboard: [[{ text: "💰 Ngwe Lwal Confirm", callback_data: `FINANCE_CONFIRM_${sender_psid}` }]] };
                 await sendTelegramPhoto(
                     TELEGRAM_FINANCE_CHAT_ID, 
                     attachment.payload.url, 
