@@ -17,13 +17,13 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // 🧠 Customer တစ်ယောက်ချင်းစီရဲ့ စကားပြောမှတ်ဉာဏ် (Chat History)
 const chatHistories = {};
 
-// 🛠️ Gemini API သို့ တိုက်ရိုက်ခေါ်ယူသည့် စနစ် (Payload 400 Fixed)
+// 🛠️ Gemini API သို့ တိုက်ရိုက်ခေါ်ယူသည့် စနစ် (Standard Base Format)
 async function callGeminiAPI(systemInstruction, userMessage, history = []) {
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
     
     const contents = [];
     
-    // မှတ်ဉာဏ် သမိုင်းကြောင်းများကို payload သို့ စနစ်တကျ ပြောင်းလဲထည့်သွင်းခြင်း
+    // History များကို Standard Object အဖြစ် ပြောင်းလဲခြင်း
     history.forEach(turn => {
         contents.push({
             role: turn.role === 'user' ? 'user' : 'model',
@@ -31,16 +31,21 @@ async function callGeminiAPI(systemInstruction, userMessage, history = []) {
         });
     });
     
-    // လက်ရှိ စာသားကို ထည့်သွင်းခြင်း
+    // လက်ရှိ စာသားထည့်ခြင်း
     contents.push({
         role: 'user',
         parts: [{ text: userMessage }]
     });
 
+    // 🛠️ Status 400 လုံးဝမတက်စေရန် Google REST Structure အမှန်ဆုံးပုံစံ
     const payload = {
         contents: contents,
         systemInstruction: {
             parts: [{ text: systemInstruction }]
+        },
+        generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 800
         }
     };
 
@@ -48,7 +53,7 @@ async function callGeminiAPI(systemInstruction, userMessage, history = []) {
     return response.data.candidates[0].content.parts[0].text;
 }
 
-// 🛠️ မှာယူသည့် အချက်အလက် သန့်စင်သည့် စနစ် (Payload 400 Fixed)
+// 🛠️ မှာယူသည့် အချက်အလက် သန့်စင်သည့် စနစ် (Clean Spec Rest Schema)
 async function extractOrderSpecs(conversationText) {
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
     
@@ -119,13 +124,13 @@ async function sendTelegramPhoto(chatId, photoUrl, caption, replyMarkup = null) 
     try { await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, { chat_id: chatId, photo: photoUrl, caption: caption, parse_mode: 'Markdown', reply_markup: replyMarkup }); } catch (e) {}
 }
 
-app.get('/', (req, res) => res.status(200).send('AI Automation System Running...'));
+app.get('/', (req, res) => res.status(200).send('AI Automation Server is Running Successfully...'));
 app.get('/webhook', (req, res) => {
     if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === VERIFY_TOKEN) return res.status(200).send(req.query['hub.challenge']);
     return res.sendStatus(403);
 });
 
-// Facebook Webhook
+// Facebook Webhook Listener
 app.post('/webhook', async (req, res) => {
     const body = req.body;
     if (body.object !== 'page') return res.sendStatus(404);
@@ -155,7 +160,7 @@ app.post('/webhook', async (req, res) => {
             continue;
         }
 
-        // ၁။ Screenshot ပို့လာလျှင်
+        // ၁။ Screenshot ပို့လာလျှင် -> Finance Group
         if (webhook_event.message && webhook_event.message.attachments) {
             const attachment = webhook_event.message.attachments[0];
             if (attachment.type === 'image') {
@@ -231,7 +236,7 @@ app.post('/webhook', async (req, res) => {
     return res.status(200).send('EVENT_RECEIVED');
 });
 
-// Telegram Callbacks
+// Telegram Callbacks Listener
 app.post('/tg-webhook', async (req, res) => {
     const { callback_query } = req.body;
     if (!callback_query) return res.sendStatus(200);
@@ -244,7 +249,7 @@ app.post('/tg-webhook', async (req, res) => {
         let cleanSpecs = "အချက်အလက် စစ်ဆေးဆဲ...";
         if (chatHistories[psid]) {
             let conversation = "";
-            chatHistories[psid].history.forEach(t => conversation += `${t.role}: ${t.text}\n`);
+            chatHistories[psid].history.forEach(t => conversation += `${t.text}\n`);
             cleanSpecs = await extractOrderSpecs(conversation);
         }
 
