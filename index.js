@@ -145,7 +145,7 @@ app.post('/webhook', async (req, res) => {
                         const history = await chatSessions[sender_psid].session.getHistory();
                         let conversation = "";
                         history.forEach(t => conversation += `${t.parts[0].text}\n`);
-                        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+                        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
                         const ext = await model.generateContent(`Customer မှာယူထားသော ပစ္စည်းအမည်နှင့် အရေအတွက်ကိုသာ ထုတ်ပေးပါ-\n\n${conversation}`);
                         orderItems = ext.response.text().trim();
                     } catch (e) {}
@@ -170,7 +170,7 @@ app.post('/webhook', async (req, res) => {
             try {
                 const { itemsText, deliRules } = await getSheetData();
                 const modelConfig = { 
-                    model: "gemini-2.5-flash",
+                    model: "gemini-1.5-pro",
                     systemInstruction: `
 သင်သည် ဆိုင်၏ အလွန်ယဉ်ကျေးသော လူသားအရောင်းဝန်ထမ်းတစ်ဦး ဖြစ်သည်။ စက်ရုပ်လို လုံးဝမဖြေရ။
 [လမ်းညွှန်ချက်]
@@ -219,7 +219,7 @@ app.post('/tg-webhook', async (req, res) => {
                 const history = await chatSessions[psid].session.getHistory();
                 let conversation = "";
                 history.forEach(t => conversation += `${t.parts[0].text}\n`);
-                const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
                 const ext = await model.generateContent(`အောက်ပါစာသားထဲမှ Customer ၏ အမည်၊ ဖုန်းနံပါတ်၊ လိပ်စာ၊ မှာယူသည့်ပစ္စည်း တို့ကိုသာ ထုတ်ပေးပါ။\n\n${conversation}`);
                 cleanSpecs = ext.response.text();
             } catch (e) {}
