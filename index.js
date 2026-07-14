@@ -17,11 +17,13 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // 🧠 Customer တစ်ယောက်ချင်းစီရဲ့ စကားပြောမှတ်ဉာဏ် (Chat History)
 const chatHistories = {};
 
-// 🛠️ Google Stable v1 API သို့ တိုက်ရိုက် Axios ဖြင့် ခေါ်ယူသည့် Function (Payload Schema Fixed)
+// 🛠️ Gemini API သို့ တိုက်ရိုက်ခေါ်ယူသည့် စနစ် (Payload 400 Fixed)
 async function callGeminiAPI(systemInstruction, userMessage, history = []) {
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
     
     const contents = [];
+    
+    // မှတ်ဉာဏ် သမိုင်းကြောင်းများကို payload သို့ စနစ်တကျ ပြောင်းလဲထည့်သွင်းခြင်း
     history.forEach(turn => {
         contents.push({
             role: turn.role === 'user' ? 'user' : 'model',
@@ -29,19 +31,16 @@ async function callGeminiAPI(systemInstruction, userMessage, history = []) {
         });
     });
     
+    // လက်ရှိ စာသားကို ထည့်သွင်းခြင်း
     contents.push({
         role: 'user',
         parts: [{ text: userMessage }]
     });
 
-    // 🛠️ Status 400 ကို ကျော်လွှားရန် Official ရေးထုံးအမှန်
     const payload = {
         contents: contents,
         systemInstruction: {
             parts: [{ text: systemInstruction }]
-        },
-        generationConfig: {
-            temperature: 0.7
         }
     };
 
@@ -49,19 +48,22 @@ async function callGeminiAPI(systemInstruction, userMessage, history = []) {
     return response.data.candidates[0].content.parts[0].text;
 }
 
-// 🛠️ Chat History ထဲကနေ မှာယူတဲ့ Specs တွေကို သန့်စင်ထုတ်ယူပေးမည့် Function (Payload Schema Fixed)
+// 🛠️ မှာယူသည့် အချက်အလက် သန့်စင်သည့် စနစ် (Payload 400 Fixed)
 async function extractOrderSpecs(conversationText) {
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
+    
     const payload = {
         contents: [{
             role: 'user',
             parts: [{ text: `အောက်ပါ စကားပြောဆိုမှုထဲမှ Customer ၏ (၁) အမည်၊ (၂) ဖုန်းနံပါတ်၊ (၃) လိပ်စာ၊ (၄) မှာယူသည့်ပစ္စည်း နှင့် အရေအတွက် တို့ကိုသာ သန့်သန့်ရှင်းရှင်း စာရင်းထုတ်ပေးပါ။ Chat list ကြီး သို့မဟုတ် Customer/AI စာတန်းကြီးများ မလိုချင်ပါ။\n\n${conversationText}` }]
         }]
     };
+    
     try {
         const response = await axios.post(url, payload, { headers: { 'Content-Type': 'application/json' } });
         return response.data.candidates[0].content.parts[0].text;
     } catch (e) {
+        console.error("Extraction error:", e.message);
         return "အချက်အလက် စစ်ဆေးဆဲ...";
     }
 }
@@ -102,7 +104,7 @@ async function getSheetData() {
         if (tempItems) itemsText = tempItems;
         if (tempDeli) deliRules = tempDeli;
 
-    } catch (e) { console.error("Sheet read error:", e.message); }
+    } catch (e) { console.error("Sheet error:", e.message); }
     return { itemsText, deliRules };
 }
 
@@ -117,7 +119,7 @@ async function sendTelegramPhoto(chatId, photoUrl, caption, replyMarkup = null) 
     try { await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, { chat_id: chatId, photo: photoUrl, caption: caption, parse_mode: 'Markdown', reply_markup: replyMarkup }); } catch (e) {}
 }
 
-app.get('/', (req, res) => res.status(200).send('Direct API Automated Agent is Live...'));
+app.get('/', (req, res) => res.status(200).send('AI Automation System Running...'));
 app.get('/webhook', (req, res) => {
     if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === VERIFY_TOKEN) return res.status(200).send(req.query['hub.challenge']);
     return res.sendStatus(403);
@@ -133,7 +135,7 @@ app.post('/webhook', async (req, res) => {
         const webhook_event = entry.messaging[0];
         const sender_psid = webhook_event.sender.id;
 
-        // Button Clicks (Confirmation)
+        // Button Clicks
         if (webhook_event.postback) {
             const payload = webhook_event.postback.payload;
             if (payload.startsWith("CONFIRM_ORDER_")) {
@@ -153,7 +155,7 @@ app.post('/webhook', async (req, res) => {
             continue;
         }
 
-        // ၁။ Screenshot ပို့လာလျှင် -> Finance Group
+        // ၁။ Screenshot ပို့လာလျှင်
         if (webhook_event.message && webhook_event.message.attachments) {
             const attachment = webhook_event.message.attachments[0];
             if (attachment.type === 'image') {
@@ -164,7 +166,7 @@ app.post('/webhook', async (req, res) => {
                     orderItems = await extractOrderSpecs(conversation);
                 }
 
-                const inlineKeyboard = { inline_keyboard: [[{ text: "💰 Ngwe Lwal Confirm", callback_data: `FINANCE_CONFIRM_${sender_psid}` }]] };
+                const inlineKeyboard = { inline_keyboard: [[{ text: "💰 ငွေလွှဲမှန်ကန်ကြောင်း အတည်ပြုမည်", callback_data: `FINANCE_CONFIRM_${sender_psid}` }]] };
                 await sendTelegramPhoto(
                     TELEGRAM_FINANCE_CHAT_ID, 
                     attachment.payload.url, 
@@ -189,7 +191,7 @@ app.post('/webhook', async (req, res) => {
 ၂။ မှာယူမည်ဟု ပြောလာပါက "ပို့ဆောင်ပေးရမည့် မြို့နယ်" ကို အရင်မေးပါ။
 ၃။ မြို့နယ်အလိုက် ဤစည်းကမ်းချက်အတိုင်း တွက်ချက်ပါ-\n${deliRules}
    - COD ရသော မြို့နယ်ဖြစ်ပါက: COD ရကြောင်းပြောပြီး အမည်၊ ဖုန်း၊ လိပ်စာ တောင်းပါ။
-   - COD မရပါက: Ngwe kyo lwal ya myi hpyitကြောင်း ရှင်းပြပြီး ငွေလွှဲပြေစာ တောင်းပါ။
+   - COD မရပါက: ငွေကြိုလွှဲရမည်ဖြစ်ကြောင်း ရှင်းပြပြီး ငွေလွှဲပြေစာ တောင်းပါ။
 ၄။ Customer က အချက်အလက်အစုံပေးပြီးပါက အော်ဒါအနှစ်ချုပ်ပြပြီး ခလုတ်နှိပ်၍ အတည်ပြုခိုင်းပါ။
 `;
 
@@ -237,7 +239,7 @@ app.post('/tg-webhook', async (req, res) => {
 
     if (data.startsWith("FINANCE_CONFIRM_")) {
         const psid = data.replace("FINANCE_CONFIRM_", "");
-        await sendFacebookMessage(psid, "ငွေလွှဲပြေစာကို စစ်ဆေးပြီးပါပြီရှင်။ Ngwe lwalလက်ခံရရှိပါပြီ။ ပစ္စည်းများကို Packing ဌာနသို့ လွှဲပြောင်းပေးလိုက်ပါပြီ။");
+        await sendFacebookMessage(psid, "ငွေလွှဲပြေစာကို စစ်ဆေးပြီးပါပြီရှင်။ ငွေလွှဲလက်ခံရရှိပါပြီ။ ပစ္စည်းများကို Packing ဌာနသို့ လွှဲပြောင်းပေးလိုက်ပါပြီ။");
 
         let cleanSpecs = "အချက်အလက် စစ်ဆေးဆဲ...";
         if (chatHistories[psid]) {
