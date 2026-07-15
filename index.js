@@ -14,16 +14,16 @@ const TELEGRAM_FINANCE_CHAT_ID = process.env.TELEGRAM_FINANCE_CHAT_ID;
 const TELEGRAM_PACKING_CHAT_ID = process.env.TELEGRAM_PACKING_CHAT_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// 🧠 Customer တစ်ယောက်ချင်းစီရဲ့ စကားပြောမှတ်ဉာဏ် (Chat History)
 const chatHistories = {};
 
-// 🛠️ Gemini API သို့ တိုက်ရိုက်ခေါ်ယူသည့် စနစ် (Standard Base Format)
+// 🛠️ Gemini API သို့ တိုက်ရိုက်ခေါ်ယူသည့် စနစ် (REST Endpoint Fixed)
 async function callGeminiAPI(systemInstruction, userMessage, history = []) {
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
+    // 💡 တိုက်ရိုက် REST call အတွက် v1beta endpoint သည် JSON payload အား ကျိန်းသေပေါက် လက်ခံပါသည်
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
     
     const contents = [];
     
-    // History များကို Standard Object အဖြစ် ပြောင်းလဲခြင်း
+    // History ပုံစံကို standard format ပြောင်းခြင်း
     history.forEach(turn => {
         contents.push({
             role: turn.role === 'user' ? 'user' : 'model',
@@ -31,13 +31,12 @@ async function callGeminiAPI(systemInstruction, userMessage, history = []) {
         });
     });
     
-    // လက်ရှိ စာသားထည့်ခြင်း
+    // လက်ရှိစာသား ထည့်ခြင်း
     contents.push({
         role: 'user',
         parts: [{ text: userMessage }]
     });
 
-    // 🛠️ Status 400 လုံးဝမတက်စေရန် Google REST Structure အမှန်ဆုံးပုံစံ
     const payload = {
         contents: contents,
         systemInstruction: {
@@ -53,15 +52,18 @@ async function callGeminiAPI(systemInstruction, userMessage, history = []) {
     return response.data.candidates[0].content.parts[0].text;
 }
 
-// 🛠️ မှာယူသည့် အချက်အလက် သန့်စင်သည့် စနစ် (Clean Spec Rest Schema)
+// 🛠️ မှာယူသည့် အချက်အလက် သန့်စင်သည့် စနစ် (REST Schema Fixed)
 async function extractOrderSpecs(conversationText) {
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
     
     const payload = {
         contents: [{
             role: 'user',
             parts: [{ text: `အောက်ပါ စကားပြောဆိုမှုထဲမှ Customer ၏ (၁) အမည်၊ (၂) ဖုန်းနံပါတ်၊ (၃) လိပ်စာ၊ (၄) မှာယူသည့်ပစ္စည်း နှင့် အရေအတွက် တို့ကိုသာ သန့်သန့်ရှင်းရှင်း စာရင်းထုတ်ပေးပါ။ Chat list ကြီး သို့မဟုတ် Customer/AI စာတန်းကြီးများ မလိုချင်ပါ။\n\n${conversationText}` }]
-        }]
+        }],
+        generationConfig: {
+            temperature: 0.2
+        }
     };
     
     try {
@@ -124,7 +126,7 @@ async function sendTelegramPhoto(chatId, photoUrl, caption, replyMarkup = null) 
     try { await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, { chat_id: chatId, photo: photoUrl, caption: caption, parse_mode: 'Markdown', reply_markup: replyMarkup }); } catch (e) {}
 }
 
-app.get('/', (req, res) => res.status(200).send('AI Automation Server is Running Successfully...'));
+app.get('/', (req, res) => res.status(200).send('AI Order Workflow System is running...'));
 app.get('/webhook', (req, res) => {
     if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === VERIFY_TOKEN) return res.status(200).send(req.query['hub.challenge']);
     return res.sendStatus(403);
@@ -236,7 +238,7 @@ app.post('/webhook', async (req, res) => {
     return res.status(200).send('EVENT_RECEIVED');
 });
 
-// Telegram Callbacks Listener
+// Telegram Callbacks
 app.post('/tg-webhook', async (req, res) => {
     const { callback_query } = req.body;
     if (!callback_query) return res.sendStatus(200);
