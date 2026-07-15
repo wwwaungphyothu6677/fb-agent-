@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 const app = express();
@@ -12,52 +13,20 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_FINANCE_CHAT_ID = process.env.TELEGRAM_FINANCE_CHAT_ID;
 const TELEGRAM_PACKING_CHAT_ID = process.env.TELEGRAM_PACKING_CHAT_ID;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// 🧠 Customer တစ်ယောက်ချင်းစီရဲ့ စကားပြောမှတ်ဉာဏ် (Chat History)
-const chatHistories = {};
+// 🛠️ Official SDK ကို v1 Stable Endpoint သို့ အတင်းသတ်မှတ်၍ တည်ဆောက်ခြင်း
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY, { apiVersion: 'v1' });
+const chatSessions = {};
 
-// 🛠️ Stable v1 Endpoint သို့ တိုက်ရိုက်ခေါ်ယူပြီး gemini-2.5-flash အသုံးပြုခြင်း (404/400 Error Free)
-async function callGeminiAPI(systemInstruction, userMessage, history = []) {
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-    
-    const contents = [];
-    history.forEach(turn => {
-        contents.push({
-            role: turn.role === 'user' ? 'user' : 'model',
-            parts: [{ text: turn.text }]
-        });
-    });
-    
-    contents.push({
-        role: 'user',
-        parts: [{ text: userMessage }]
-    });
-
-    const payload = {
-        contents: contents,
-        systemInstruction: {
-            parts: [{ text: systemInstruction }]
-        }
-    };
-
-    const response = await axios.post(url, payload, { headers: { 'Content-Type': 'application/json' } });
-    return response.data.candidates[0].content.parts[0].text;
-}
-
-// 🛠️ မှာယူသည့် အချက်အလက် သန့်စင်ထုတ်ယူသည့် စနစ်
+// 🛠️ Chat History မှ မှာယူသည့် Specifications သန့်စင်သည့်စနစ်
 async function extractOrderSpecs(conversationText) {
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-    const payload = {
-        contents: [{
-            role: 'user',
-            parts: [{ text: `အောက်ပါ စကားပြောဆိုမှုထဲမှ Customer ၏ (၁) အမည်၊ (၂) ဖုန်းနံပါတ်၊ (၃) လိပ်စာ၊ (၄) မှာယူသည့်ပစ္စည်း နှင့် အရေအတွက် တို့ကိုသာ သန့်သန့်ရှင်းရှင်း စာရင်းထုတ်ပေးပါ။ အခြား စာတန်းကြီးများ မလိုချင်ပါ။\n\n${conversationText}` }]
-        }]
-    };
     try {
-        const response = await axios.post(url, payload, { headers: { 'Content-Type': 'application/json' } });
-        return response.data.candidates[0].content.parts[0].text;
-    } catch (e) { return "အချက်အလက် စစ်ဆေးဆဲ..."; }
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent(`အောက်ပါ စကားပြောဆိုမှုထဲမှ Customer ၏ (၁) အမည်၊ (၂) ဖုန်းနံပါတ်၊ (၃) လိပ်စာ၊ (၄) မှာယူသည့်ပစ္စည်း နှင့် အရေအတွက် တို့ကိုသာ သန့်သန့်ရှင်းရှင်း စာရင်းထုတ်ပေးပါ။ Chat list ကြီး သို့မဟုတ် စာတန်းကြီးများ မလိုချင်ပါ။\n\n${conversationText}`);
+        return result.response.text();
+    } catch (e) {
+        return "အချက်အလက် စစ်ဆေးဆဲ...";
+    }
 }
 
 // 📊 Google Sheet Data Parser
@@ -100,7 +69,7 @@ async function getSheetData() {
     return { itemsText, deliRules };
 }
 
-// Telegram Functions
+// Telegram Utils
 async function sendTelegramMessage(chatId, text, replyMarkup = null) {
     if (!TELEGRAM_BOT_TOKEN || !chatId) return;
     try { await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, { chat_id: chatId, text: text, parse_mode: 'Markdown', reply_markup: replyMarkup }); } catch (e) {}
@@ -111,7 +80,7 @@ async function sendTelegramPhoto(chatId, photoUrl, caption, replyMarkup = null) 
     try { await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, { chat_id: chatId, photo: photoUrl, caption: caption, parse_mode: 'Markdown', reply_markup: replyMarkup }); } catch (e) {}
 }
 
-app.get('/', (req, res) => res.status(200).send('System is running successfully on Stable Endpoint...'));
+app.get('/', (req, res) => res.status(200).send('SDK Live Service Running...'));
 app.get('/webhook', (req, res) => {
     if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === VERIFY_TOKEN) return res.status(200).send(req.query['hub.challenge']);
     return res.sendStatus(403);
@@ -134,9 +103,10 @@ app.post('/webhook', async (req, res) => {
                 const psid = payload.replace("CONFIRM_ORDER_", "");
                 let finalOrderText = "အချက်အလက် စစ်ဆေးမရပါ။";
                 
-                if (chatHistories[psid]) {
+                if (chatSessions[psid]) {
+                    const history = await chatSessions[psid].getHistory();
                     let conversation = "";
-                    chatHistories[psid].history.forEach(t => conversation += `${t.role}: ${t.text}\n`);
+                    history.forEach(t => conversation += `${t.role}: ${t.parts[0].text}\n`);
                     finalOrderText = await extractOrderSpecs(conversation);
                 }
 
@@ -152,9 +122,10 @@ app.post('/webhook', async (req, res) => {
             const attachment = webhook_event.message.attachments[0];
             if (attachment.type === 'image') {
                 let orderItems = "ပစ္စည်းအချက်အလက် မသိရပါ";
-                if (chatHistories[sender_psid]) {
+                if (chatSessions[sender_psid]) {
+                    const history = await chatSessions[sender_psid].getHistory();
                     let conversation = "";
-                    chatHistories[sender_psid].history.forEach(t => conversation += `${t.role}: ${t.text}\n`);
+                    history.forEach(t => conversation += `${t.role}: ${t.parts[0].text}\n`);
                     orderItems = await extractOrderSpecs(conversation);
                 }
 
@@ -187,15 +158,16 @@ app.post('/webhook', async (req, res) => {
 ၄။ Customer က အချက်အလက်အစုံပေးပြီးပါက အော်ဒါအနှစ်ချုပ်ပြပြီး ခလုတ်နှိပ်၍ အတည်ပြုခိုင်းပါ။
 `;
 
-                const now = Date.now();
-                if (!chatHistories[sender_psid] || (now - chatHistories[sender_psid].createdAt > 24 * 60 * 60 * 1000)) {
-                    chatHistories[sender_psid] = { history: [], createdAt: now };
+                if (!chatSessions[sender_psid]) {
+                    const model = genAI.getGenerativeModel({
+                        model: "gemini-1.5-flash",
+                        systemInstruction: systemInstruction
+                    });
+                    chatSessions[sender_psid] = model.startChat();
                 }
 
-                const aiReply = await callGeminiAPI(systemInstruction, userMessage, chatHistories[sender_psid].history);
-
-                chatHistories[sender_psid].history.push({ role: 'user', text: userMessage });
-                chatHistories[sender_psid].history.push({ role: 'model', text: aiReply });
+                const result = await chatSessions[sender_psid].sendMessage(userMessage);
+                const aiReply = result.response.text();
 
                 const isReadyToConfirm = /(အတည်ပြု|ခလုတ်)/i.test(aiReply);
                 if (isReadyToConfirm) {
@@ -206,8 +178,9 @@ app.post('/webhook', async (req, res) => {
 
                 const hasDetails = /(လိပ်စာ|အိမ်အမှတ်|လမ်း|မြို့)/i.test(userMessage) && /(09\d{7,9})/.test(userMessage);
                 if (hasDetails && /COD|အိမ်ရောက်ငွေချေ/i.test(aiReply)) {
+                    const history = await chatSessions[sender_psid].getHistory();
                     let conversation = "";
-                    chatHistories[sender_psid].history.forEach(t => conversation += `${t.role}: ${t.text}\n`);
+                    history.forEach(t => conversation += `${t.role}: ${t.parts[0].text}\n`);
                     const cleanSpecs = await extractOrderSpecs(conversation);
 
                     const inlineKeyboard = { inline_keyboard: [[{ text: "📦 ပါဆယ်ထုတ်ပြီးပြီ", callback_data: `PACKING_DONE_${sender_psid}` }]] };
@@ -234,9 +207,10 @@ app.post('/tg-webhook', async (req, res) => {
         await sendFacebookMessage(psid, "ငွေလွှဲပြေစာကို စစ်ဆေးပြီးပါပြီရှင်။ ငွေလွှဲလက်ခံရရှိပါပြီ။ ပစ္စည်းများကို Packing ဌာနသို့ လွှဲပြောင်းပေးလိုက်ပါပြီ။");
 
         let cleanSpecs = "အချက်အလက် စစ်ဆေးဆဲ...";
-        if (chatHistories[psid]) {
+        if (chatSessions[psid]) {
+            const history = await chatSessions[psid].getHistory();
             let conversation = "";
-            chatHistories[psid].history.forEach(t => conversation += `${t.text}\n`);
+            history.forEach(t => conversation += `${t.role}: ${t.parts[0].text}\n`);
             cleanSpecs = await extractOrderSpecs(conversation);
         }
 
@@ -266,3 +240,4 @@ async function sendFacebookButtonMessage(sender_psid, text, payloadId) {
 }
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Stable Service running on port ${PORT}`));
+
