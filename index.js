@@ -16,14 +16,13 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const chatHistories = {};
 
-// 🛠️ Gemini API သို့ တိုက်ရိုက်ခေါ်ယူသည့် စနစ် (REST Endpoint Fixed)
+// 🛠️ Gemini API သို့ တိုက်ရိုက်ခေါ်ယူသည့် စနစ် (Strict JSON Standard Format)
 async function callGeminiAPI(systemInstruction, userMessage, history = []) {
-    // 💡 တိုက်ရိုက် REST call အတွက် v1beta endpoint သည် JSON payload အား ကျိန်းသေပေါက် လက်ခံပါသည်
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     
     const contents = [];
     
-    // History ပုံစံကို standard format ပြောင်းခြင်း
+    // History ပုံစံကို standard contents format ပြောင်းခြင်း
     history.forEach(turn => {
         contents.push({
             role: turn.role === 'user' ? 'user' : 'model',
@@ -37,14 +36,11 @@ async function callGeminiAPI(systemInstruction, userMessage, history = []) {
         parts: [{ text: userMessage }]
     });
 
+    // 🛠️ 400 Bad Request လုံးဝမဖြစ်စေရန် Standard သန့်စင်ပြီး Payload format
     const payload = {
         contents: contents,
         systemInstruction: {
             parts: [{ text: systemInstruction }]
-        },
-        generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 800
         }
     };
 
@@ -52,25 +48,21 @@ async function callGeminiAPI(systemInstruction, userMessage, history = []) {
     return response.data.candidates[0].content.parts[0].text;
 }
 
-// 🛠️ မှာယူသည့် အချက်အလက် သန့်စင်သည့် စနစ် (REST Schema Fixed)
+// 🛠️ မှာယူသည့် အချက်အလက် သန့်စင်သည့် စနစ်
 async function extractOrderSpecs(conversationText) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     
     const payload = {
         contents: [{
             role: 'user',
             parts: [{ text: `အောက်ပါ စကားပြောဆိုမှုထဲမှ Customer ၏ (၁) အမည်၊ (၂) ဖုန်းနံပါတ်၊ (၃) လိပ်စာ၊ (၄) မှာယူသည့်ပစ္စည်း နှင့် အရေအတွက် တို့ကိုသာ သန့်သန့်ရှင်းရှင်း စာရင်းထုတ်ပေးပါ။ Chat list ကြီး သို့မဟုတ် Customer/AI စာတန်းကြီးများ မလိုချင်ပါ။\n\n${conversationText}` }]
-        }],
-        generationConfig: {
-            temperature: 0.2
-        }
+        }]
     };
     
     try {
         const response = await axios.post(url, payload, { headers: { 'Content-Type': 'application/json' } });
         return response.data.candidates[0].content.parts[0].text;
     } catch (e) {
-        console.error("Extraction error:", e.message);
         return "အချက်အလက် စစ်ဆေးဆဲ...";
     }
 }
